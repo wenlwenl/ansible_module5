@@ -1,0 +1,113 @@
+---
+# tasks file for role_maven
+- name: update for Debian/Ubuntu
+  apt:
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
+- name: update for RedHat/CentOS
+  yum:
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: install default JDK on Debian/Ubuntu
+  apt:
+    name: openjdk-17-jdk
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: install default JDK
+  yum:
+    name: java-17-openjdk-devel
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: find the full path of Java binary
+  shell: readlink -f $(which java)
+  register: which_java
+  ignore_errors: yes
+
+- name: print full path of java
+  debug:
+    msg: "which_java is: {{ which_java.stdout }}"
+
+- name: extract JAVA_HOME
+  set_fact:
+    JAVA_HOME: "{{ which_java.stdout | regex_replace('/bin/java','') }}"
+
+- name: print JAVA_HOME
+  debug:
+    msg: "JAVA_HOME is set to {{ JAVA_HOME }}"
+
+- name: Install python3-venv (Ubuntu)
+  apt:
+    name:
+      - python3
+      - python3-venv
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Install python3 and python3-virtualenv
+  yum:
+    name:
+      - python3
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Create a Python virtual environment
+  command: python3 -m venv /opt/venv
+  args:
+    creates: /opt/venv
+
+- name: Install python3-pip on Ubuntu
+  apt:
+    name: python3-pip
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Install python3-pip on CentOS
+  yum:
+    name: python3-pip
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Install urllib3 and requests via pip
+  pip:
+    name:
+      - urllib3
+      - requests
+    executable: /opt/venv/bin/pip
+
+- name: create download directory
+  file:
+    path: "{{ download_dir }}"
+    state: directory
+    mode: 0770
+
+- name: download maven
+  get_url:
+    url: "{{ maven_url }}"
+    dest: "{{ download_dir }}"
+    validate_certs: no
+
+- name: extract the maven file
+  unarchive:
+    src: "{{ download_dir }}/apache-maven-{{ maven_version }}-bin.tar.gz"
+    dest: "/opt/"
+    remote_src: yes
+
+- name: set symbolic link
+  alternatives:
+    name: maven
+    link: /usr/bin/mvn
+    path: "/opt/apache-maven-{{ maven_version }}/bin/mvn"
+    priority: 1001
+
+- name: Display Maven alternatives
+  shell: update-alternatives --display maven
+  register: alternatives_output
+
+- name: Debug Maven alternatives
+  debug:
+    var: alternatives_output.stdout
+

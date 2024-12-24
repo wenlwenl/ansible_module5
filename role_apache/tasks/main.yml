@@ -1,0 +1,146 @@
+---
+# tasks file for role_apache
+- name: update for Debian/Ubuntu
+  apt:
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
+- name: update for RedHat/CentOS
+  yum:
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: install default JDK on Debian/Ubuntu
+  apt:
+    name: openjdk-17-jdk
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: install default JDK
+  yum:
+    name: java-17-openjdk-devel
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: find the full path of Java binary
+  shell: readlink -f $(which java)
+  register: which_java
+  ignore_errors: yes
+
+- name: print full path of java
+  debug:
+    msg: "which_java is: {{ which_java.stdout }}"
+
+- name: extract JAVA_HOME
+  set_fact:
+    JAVA_HOME: "{{ which_java.stdout | regex_replace('/bin/java','') }}"
+
+- name: print JAVA_HOME
+  debug:
+    msg: "JAVA_HOME is set to {{ JAVA_HOME }}"
+
+- name: Install python3-venv (Ubuntu)
+  apt:
+    name: 
+      - python3
+      - python3-venv
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Install python3 on RedHat
+  yum:
+    name:
+      - python3
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Create a Python virtual environment
+  command: python3 -m venv /opt/venv
+  args:
+    creates: /opt/venv
+
+- name: Install python3-pip on Ubuntu
+  apt:
+    name: python3-pip
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Install python3-pip on CentOS
+  yum:
+    name: python3-pip
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Install urllib3 and requests via pip
+  pip:
+    name:
+      - urllib3
+      - requests
+    executable: /opt/venv/bin/pip
+
+- name: create tomcat group
+  group:
+    name: "{{ tomcat_group }}"
+
+- name: create tomcat user
+  user:
+    name: "{{ tomcat_user }}"
+    shell: /bin/false
+    group: "{{ tomcat_group }}"
+    home: "/home/{{ tomcat_user }}"
+
+- name: download Tomcat
+  get_url:
+    url: "{{ tomcat_url }}"
+    dest: /tmp/apache-tomcat-{{ tomcat_version }}.tar.gz
+    validate_certs: no
+
+- name: create Tomcat installation directory
+  file:
+    path: "{{ tomcat_home }}"
+    state: directory
+
+- name: extract Tomcat
+  unarchive:
+    src: /tmp/apache-tomcat-{{ tomcat_version }}.tar.gz
+    dest: "{{ tomcat_home }}"
+    remote_src: yes
+    group: "{{ tomcat_group }}"
+    owner: "{{ tomcat_user }}"
+    mode: 0770
+    extra_opts: ["--strip-components=1"]
+
+- name: set the tomcat service file
+  copy:
+    dest: /etc/systemd/system/tomcat.service
+    content: |
+      [Unit]
+      Description=Apache Tomcat Web Application Container
+      After=network.target
+
+      [Service]
+      Type=forking
+
+      Environment=CATALINA_PID={{ tomcat_home }}/temp/tomcat.pid
+      Environment=CATALINA_HOME={{ tomcat_home }}
+      Environment=CATALINA_BASE={{ tomcat_home }}
+      ExecStart={{ tomcat_home }}/bin/startup.sh
+      ExecStop={{ tomcat_home }}/bin/shutdown.sh
+      
+      User={{ tomcat_user }}
+      Group={{ tomcat_group }}
+      Restart=always
+
+      [Install]
+      WantedBy=multi-user.target
+  
+- name: reload system daemon
+  systemd:
+    daemon_reload: yes
+
+- name: start tomcat service
+  systemd:
+    name: tomcat
+    state: started
+    enabled: yes
+

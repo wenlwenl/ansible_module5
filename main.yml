@@ -1,0 +1,9 @@
+---
+- name: DevOps assignment Module 5
+  hosts: all
+  become: true
+  vars:
+    ansible_become_pass: Liwen123$
+  roles:
+    - role: role_apache
+    - role: role_maven
